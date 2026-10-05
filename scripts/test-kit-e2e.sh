@@ -251,14 +251,26 @@ requirement_names() {
 #      whereas sbx rejects an unknown agent by name, which is a better error than
 #      composing onto the wrong base and failing somewhere inside the build.
 #   4. The `<base>-mixin` naming convention, for a mixin that requires nothing.
-#   5. The built-in `shell` agent — the cheapest, most neutral base there is, with
-#      no agent credentials in play.
+#   5. The `claude` WORKLOAD KIT in this repo.
 #
-# v2 defaulted to `claude` for every mixin without an explicit affinity, because a
-# v2 mixin had no way to state what it needed. A v3 mixin does, so the default no
-# longer has to guess a heavyweight agent.
+# Step 5 was the built-in `shell` agent, on the reasoning that it is the cheapest
+# and most neutral base with no agent credentials in play. That does not work in
+# v3: a built-in agent name contributes no WORKLOAD KIT to the composed set, and
+# v3 requires exactly one, so every mixin falling through to it failed create with
+#
+#   resolve: the kit set is not coherent:
+#     - no workload kit in the set; every composition needs exactly one
+#
+# before the mixin was exercised at all. The base has to be a kit, and `claude` is
+# the one workload here that every mixin can sit on. It is heavier than `shell`
+# was, which is the price of the base being a real kit; a mixin that wants
+# something cheaper should say so in `requires:` (step 2) or pass E2E_HOST.
+#
+# A repo with a `shell` WORKLOAD kit should make that the default instead. There
+# is none today.
 host=""
 host_source=""
+host_is_kit=yes
 if [ "$kind" = "mixin" ]; then
   if [ -n "${E2E_HOST:-}" ]; then
     host=$E2E_HOST
@@ -274,8 +286,15 @@ if [ "$kind" = "mixin" ]; then
         fi
         continue
       fi
+      # Step 3, and in v3 it can no longer produce a RUNNABLE base. A built-in
+      # agent name contributes no workload kit, and v3 needs exactly one, so
+      # composing onto it fails create with "no workload kit in the set". The
+      # name is recorded so the skip below can say which requirement is
+      # unsatisfiable here rather than failing with a resolution error that
+      # looks like a kit bug.
       host=$dep
-      host_source="the kit's requires:, assumed to name a built-in sbx agent"
+      host_source="the kit's requires:, which names no kit in this repo"
+      host_is_kit=no
       break
     done
     if [ -z "$host" ]; then
@@ -290,12 +309,85 @@ if [ "$kind" = "mixin" ]; then
       esac
     fi
     if [ -z "$host" ]; then
-      host=shell
-      host_source="the default (the kit requires no particular base)"
+      host="./claude"
+      host_source="the default workload kit (the kit requires no particular base)"
     fi
   fi
-  echo "==> $kit_name is a mixin; composing onto ${host}"
+  if [ "$host_is_kit" = "no" ]; then
+    cat >&2 <<EOF
+SKIP: $kit_name requires "$host", which is not a workload kit in this repo.
+
+A v3 composition needs exactly one workload KIT, and a built-in agent name does
+not supply one, so there is nothing here to compose this mixin onto. Substituting
+the default base would exercise a composition the kit says is wrong.
+
+Re-run against a real base when one exists:
+
+  E2E_HOST=./<workload-kit> $0 $kit_name
+
+EOF
+    exit 0
+  fi
+  echo "==> $kit_name is a mixin; composing onto ${host} (${host_source})"
 fi
+
+# RUNNING A KIT WHOSE NAME A BUILT-IN AGENT ALREADY HOLDS
+#
+# sbx refuses to register a kit under a name a built-in agent owns:
+#
+#   error: agent "claude" is already registered
+#          (built-in agents cannot be overridden by a kit)
+#
+# Eleven workloads here are in that position (claude, codex, cursor, devin,
+# docker-agent, nanobot, openclaw, opencode, opencode-model-runner, picoclaw,
+# zeroclaw), and so is the `claude` base every mixin now composes onto, so
+# without this the collision would take out both halves of the matrix.
+#
+# A v3 kit's NAME IS ITS DIRECTORY STEM — the descriptor carries no `name:`
+# field, and the frontend pairs `<stem>.yaml` with `<stem>.dockerfile` by stem.
+# So renaming a kit is renaming a directory and the two files named after it,
+# with no document to rewrite. (The v2 harness needed copyKitRenamed in
+# tck/e2e_rename.go to re-encode spec.yaml's `name:`; that function is v2-only
+# and is not what runs here.)
+#
+# Everything else the kit depends on travels: `contentFile:` and the recipe's
+# COPY paths are relative to the kit directory, which is copied whole.
+# `provides:` is declared, not derived from the stem, so the mixin requirements
+# that resolve against a renamed base resolve identically.
+#
+# NOT gated on a hardcoded list of built-in names — the existing rule in this
+# script is that such a list goes stale silently. It is also not gated on
+# testdata the way v2's was (`ExtractedFromBuiltin`); v3 deleted those files.
+# It fires only when sbx itself has refused, which keeps it self-limiting: a
+# kit whose name is fine never takes this path.
+e2e_rename_suffix=-e2e
+builtin_collision_marker="built-in agents cannot be overridden by a kit"
+
+# Copies $1 (a kit directory) into a temp parent as "<stem>${e2e_rename_suffix}",
+# renaming the descriptor and recipe to match, and prints the new directory.
+copy_kit_renamed() {
+  src=$1
+  stem=$(basename "$src")
+  new_stem="${stem}${e2e_rename_suffix}"
+
+  parent=$(mktemp -d "${TMPDIR:-/tmp}/sbx-e2e-rename-XXXXXX") || return 1
+  rename_dirs="${rename_dirs}${rename_dirs:+ }${parent}"
+  dst="$parent/$new_stem"
+
+  cp -a "$src" "$dst" || return 1
+  for ext in yaml yml dockerfile; do
+    if [ -f "$dst/$stem.$ext" ]; then
+      mv "$dst/$stem.$ext" "$dst/$new_stem.$ext" || return 1
+    fi
+  done
+  # The descriptor is the one file that must exist under the new stem; a kit
+  # that somehow has neither would otherwise fail later as "not a kit".
+  if [ ! -f "$dst/$new_stem.yaml" ] && [ ! -f "$dst/$new_stem.yml" ]; then
+    echo "ERROR: $src has no $stem.yaml to rename" >&2
+    return 1
+  fi
+  printf '%s\n' "$dst"
+}
 
 # Sandbox name prefix and name. sbx accepts letters, numbers, hyphens, periods
 # and plus signs — no underscores, so a kit directory carrying one is folded to
@@ -426,6 +518,7 @@ workspace=$(mktemp -d "${TMPDIR:-/tmp}/sbx-e2e-workspace-XXXXXX") || {
 # diagnostics that can still be relevant. It is set here so the trap can never
 # read it unset, and updated in step with the run below.
 stage=startup
+rename_dirs=""
 on_exit() {
   rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -496,6 +589,9 @@ If you haven't logged in to the scoped daemon yet:
 EOF
   fi
   rm -rf "$workspace"
+  # Each rename retry makes its own temp parent; there is at most one of the
+  # kit and one of the base, but the loop costs nothing and does not assume.
+  for d in ${rename_dirs:-}; do rm -rf "$d"; done
   exit "$rc"
 }
 trap on_exit EXIT
@@ -521,12 +617,86 @@ sbx --app-name "$APP_NAME" kit inspect "$kit_abs" </dev/null
 # are flag lists assembled above, not single values.
 stage=run
 echo "==> sbx run -d --name ${sandbox_name} (workspace ${workspace})"
+
+# staged_name is the stem the composed sandbox stages this kit's sources under.
+# It follows a rename, which is why the agent-context check below reads it
+# rather than $kit_name.
+staged_name=$kit_name
+
+# Output is captured, not streamed, because the retry decision is made on it.
+# It is echoed either way, so a passing run reads as it did before and a failing
+# one still shows sbx's own message before this script's diagnosis.
+# run_kit <kit-path> <base|""> [forwarded args...]
+# The first two are positional because they are what a retry swaps; everything
+# after them is the caller's forwarded "$@" and is passed through untouched.
+run_kit() {
+  rk_kit=$1
+  rk_host=$2
+  shift 2
+  if [ "$kind" = "workload" ]; then
+    sbx --app-name "$APP_NAME" run -d --name "$sandbox_name" \
+      $kit_arg_flags "$@" "$rk_kit" "$workspace" </dev/null 2>&1
+  else
+    sbx --app-name "$APP_NAME" run -d --name "$sandbox_name" \
+      --kit "$rk_kit" $kit_arg_flags "$@" "$rk_host" "$workspace" </dev/null 2>&1
+  fi
+}
+
 if [ "$kind" = "workload" ]; then
-  sbx --app-name "$APP_NAME" run -d --name "$sandbox_name" \
-    $kit_arg_flags "$@" "$kit_abs" "$workspace" </dev/null
+  if run_out=$(run_kit "$kit_abs" "" "$@"); then
+    printf '%s\n' "$run_out"
+  else
+    printf '%s\n' "$run_out"
+    case "$run_out" in
+      *"$builtin_collision_marker"*)
+        renamed=$(copy_kit_renamed "$kit_abs") || exit 1
+        staged_name=$(basename "$renamed")
+        # --kit-arg is scoped `<kit>.<arg>=<value>`, so the scope has to follow
+        # the rename or this kit's own arguments stop reaching it.
+        if [ -n "${KIT_ARGS:-}" ]; then
+          kit_arg_flags=""
+          for pair in $KIT_ARGS; do
+            kit_arg_flags="$kit_arg_flags --kit-arg ${staged_name}.${pair}"
+          done
+        fi
+        echo "==> NOTICE: a built-in agent already holds the name '${kit_name}';" \
+             "retrying from a copy renamed '${staged_name}'"
+        run_out=$(run_kit "$renamed" "" "$@") || { printf '%s\n' "$run_out"; exit 1; }
+        printf '%s\n' "$run_out"
+        ;;
+      *) exit 1 ;;
+    esac
+  fi
 else
-  sbx --app-name "$APP_NAME" run -d --name "$sandbox_name" \
-    --kit "$kit_abs" $kit_arg_flags "$@" "$host" "$workspace" </dev/null
+  # The BASE can collide too: every mixin without its own affinity now composes
+  # onto ./claude, and `claude` is one of the names a built-in holds. Only a
+  # local-path base can be renamed — a built-in agent name or a registry
+  # reference is not this repo's directory to copy.
+  if run_out=$(run_kit "$kit_abs" "$host" "$@"); then
+    printf '%s\n' "$run_out"
+  else
+    printf '%s\n' "$run_out"
+    case "$run_out" in
+      *"$builtin_collision_marker"*)
+        case "$host" in
+          ./*)
+            renamed_host=$(copy_kit_renamed "$REPO_ROOT/${host#./}") || exit 1
+            echo "==> NOTICE: a built-in agent already holds the base's name" \
+                 "('${host}'); retrying with a copy renamed '$(basename "$renamed_host")'"
+            run_out=$(run_kit "$kit_abs" "$renamed_host" "$@") || { printf '%s\n' "$run_out"; exit 1; }
+            printf '%s\n' "$run_out"
+            ;;
+          *)
+            echo "ERROR: the base '${host}' collides with a built-in agent name and is" >&2
+            echo "       not a local path, so it cannot be renamed. Set E2E_HOST to a" >&2
+            echo "       ./<workload-kit> in this repo." >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      *) exit 1 ;;
+    esac
+  fi
 fi
 
 # The sandbox exists; prove it is usable. `sbx run` returning is not quite the
@@ -553,7 +723,7 @@ context_file=$(awk '
 ' "$descriptor")
 if [ -n "$context_file" ]; then
   stage="agent-context check"
-  staged="/usr/share/sandbox/kit/${kit_name}/$(basename "$context_file")"
+  staged="/usr/share/sandbox/kit/${staged_name}/$(basename "$context_file")"
   echo "==> checking agent context landed at ${staged}"
   sbx --app-name "$APP_NAME" exec "$sandbox_name" -- test -s "$staged" </dev/null
 fi
