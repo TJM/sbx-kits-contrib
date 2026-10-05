@@ -94,9 +94,20 @@ jobs:
           # Add a filter for each kit directory. discover-kits.sh is the
           # single source of truth for "what is a kit" — delegate to it here
           # too instead of re-globbing for descriptors.
+          #
+          # Captured first, rather than read straight from `< <(…)`: process
+          # substitution DISCARDS the exit status, so discover-kits.sh refusing
+          # the layout (a reserved `*-kit`/`*-image` directory) would read here
+          # as "no kits", generate no filters, and report a green run having
+          # tested nothing.
+          if ! discovered=$(./scripts/discover-kits.sh); then
+            echo "::error::discover-kits.sh refused the kit layout; see its output above."
+            exit 1
+          fi
           while IFS= read -r kit; do
+            [ -n "$kit" ] || continue
             filters=$(printf '%s\n%s: "%s/**"' "$filters" "$kit" "$kit")
-          done < <(./scripts/discover-kits.sh)
+          done <<< "$discovered"
           # Shared packages and scripts get their own filters.
           filters=$(printf '%s\ntck: "tck/**"\nspec: "spec/**"\nscripts: "scripts/**"' "$filters")
           filters=$(printf '%s\nworkflows: [".github/workflows/e2e.yml", ".github/workflows/tck.yml"]' "$filters")
@@ -138,7 +149,14 @@ jobs:
           workflows_changed="${{ steps.filter.outputs.workflows }}"
 
           if [ "$scripts_changed" = "true" ] || [ "$workflows_changed" = "true" ]; then
-            kits=$(./scripts/discover-kits.sh | jq -R . | jq -sc .)
+            # Status checked before the pipe: GitHub runs `run:` under
+            # `bash -e` with NO pipefail, so jq succeeding would mask
+            # discover-kits.sh refusing the layout and yield `[]`.
+            if ! discovered=$(./scripts/discover-kits.sh); then
+              echo "::error::discover-kits.sh refused the kit layout; see its output above."
+              exit 1
+            fi
+            kits=$(printf '%s' "$discovered" | jq -R . | jq -sc .)
           else
             # Only kits that changed. `grep -vE` exits 1 (no output, no
             # match) when $changes is `[]` — e.g. a doc-only PR — which
