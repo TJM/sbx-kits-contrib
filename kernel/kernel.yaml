@@ -52,18 +52,25 @@ args:
   # names for exactly this: "opts the resolved value into the container
   # environment under this name".
   #
-  # Left overridable rather than pinned to "1". The CLI is version-pinned by the
-  # build above, so its update check can only ever nag about a version this kit
-  # did not install; suppressing it is the right default. Someone who wants the
-  # nag back can ask for it, which costs nothing and is better than a knob whose
-  # only legal value is the default.
-  updateCheck:
+  # NAMED AFTER THE VARIABLE IT SETS, not after the behaviour. An earlier draft
+  # called this `updateCheck`, which reads as "turn the update check on" while
+  # exporting KERNEL_NO_UPDATE_CHECK and turning it off -- and its documented
+  # `0` escape hatch almost certainly did nothing, because a variable set to the
+  # string "0" is still set, and a CLI that tests for the name's presence (the
+  # usual shape for a NO_* flag) stays suppressed either way.
+  #
+  # So there is no knob: v2 set this unconditionally and had no claim to be
+  # wrong about. Fixed at "1" via an arg because v3 has no static env grammar
+  # and a mixin's image config does not become the composed image's, so `env:`
+  # on a create-phase arg (SPEC-v3 §6) is the only place the value can live. The
+  # enum is what makes it fixed rather than merely defaulted.
+  noUpdateCheck:
     default: "1"
-    pattern: '^[01]$'
+    enum: ["1"]
     description: >-
-      Suppress the Kernel CLI's update check (1, the default). Set to 0 to let
-      the CLI check for newer releases; the kit still installs the pinned
-      version either way.
+      Suppresses the Kernel CLI's update check. Fixed: the CLI is pinned by the
+      build, so an update check could only ever nag about a release this kit
+      did not install.
     env: KERNEL_NO_UPDATE_CHECK
 
 provides: ["kernel@${{ kit.args.version }}"]
