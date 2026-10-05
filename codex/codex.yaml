@@ -351,6 +351,11 @@ capabilities:
         # `http_headers` it reports the header. The `headers` spelling is correct
         # for the JSON-configured agents (copilot, kiro) and does not transliterate
         # to Codex's TOML.
+        #
+        # And there is NO `type` key: Codex infers the transport from `url`, and
+        # `type = "http"` is Claude Code's `.mcp.json` spelling, which Codex
+        # warns at startup that it is ignoring. An absent line is not
+        # self-explaining, so it is recorded here rather than only in README.md.
         - command:
             - sh
             - -c
