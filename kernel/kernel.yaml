@@ -45,6 +45,26 @@ args:
     pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
     description: Kernel CLI release to install
     buildArg: KERNEL_VERSION
+  # MIGRATION NOTE: this is where v2's `environment.variables.KERNEL_NO_UPDATE_CHECK`
+  # went. v3 has no static env grammar, and a mixin's image config does not become
+  # the composed image's, so neither a descriptor block nor an ENV in the recipe
+  # has anywhere to land. `env:` on a create-phase arg is the mechanism SPEC-v3 §6
+  # names for exactly this: "opts the resolved value into the container
+  # environment under this name".
+  #
+  # Left overridable rather than pinned to "1". The CLI is version-pinned by the
+  # build above, so its update check can only ever nag about a version this kit
+  # did not install; suppressing it is the right default. Someone who wants the
+  # nag back can ask for it, which costs nothing and is better than a knob whose
+  # only legal value is the default.
+  updateCheck:
+    default: "1"
+    pattern: '^[01]$'
+    description: >-
+      Suppress the Kernel CLI's update check (1, the default). Set to 0 to let
+      the CLI check for newer releases; the kit still installs the pinned
+      version either way.
+    env: KERNEL_NO_UPDATE_CHECK
 
 provides: ["kernel@${{ kit.args.version }}"]
 
@@ -76,14 +96,19 @@ capabilities:
         allow:
           # CDP WebSocket proxy URLs take the form:
           #   wss://proxy.<region>.onkernel.com:8443/browser/cdp?jwt=...
-          # The wildcard covers all regional proxy hosts without auth injection.
-          - '*.onkernel.com'
+          # The RECURSIVE wildcard covers all regional proxy hosts without auth
+          # injection. `*` matches exactly one label, so it reaches
+          # `proxy.onkernel.com` but not a regional `proxy.us-west.onkernel.com`;
+          # `**` matches across labels and reaches both.
+          - '**.onkernel.com'
+          # Direct CDP endpoints are served from hosts under kernel.sh.
+          - '*.kernel.sh'
           # MIGRATION NOTE: api.onkernel.com is now listed literally beside the
           # wildcard that already covered it. v3 validates every credential
           # inject domain against the same phase's allow list by exact host and
           # deliberately does not expand a glob there, so that an inject rule
           # stays auditable against the list it rides on. This grants nothing
-          # `*.onkernel.com` did not.
+          # `**.onkernel.com` did not.
           - api.onkernel.com
           # npm — for agents that install @onkernel/sdk or playwright-core
           - registry.npmjs.org
