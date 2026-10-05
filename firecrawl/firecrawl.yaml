@@ -14,28 +14,31 @@ sourceUrl: https://github.com/firecrawl/firecrawl-docker-sandbox
 licenses:
   - Apache-2.0
 
-# MIGRATION NOTE, and the one judgement call in this migration: this stays a
-# literal firecrawl-py release rather than becoming an arg reference the way the
-# pinned kits here do, because it CANNOT be one. SPEC-v3 §4 admits a BUILD-phase
-# arg in this field and expands it at publish; this kit has no recipe to hand a
-# build arg to, and a create-phase arg is not expanded at publish, so the
-# published descriptor's `version:` would be the unexpanded reference itself.
+# The firecrawl-py release, by reference, written ONCE. SPEC-v3 §4 admits a
+# BUILD-phase arg here and expands it at publish, and that holds even though
+# this kit has no recipe for the build arg to reach: verified by exporting an
+# OCI layout and reading the manifest annotation back, which carries
+# `version: 4.44.0`, `provides: firecrawl-py@4.44.0` and an install hook whose
+# SDK_VERSION is 4.44.0, with no unexpanded references left.
 #
-# (Writing that reference out even inside a comment is refused: the frontend
-# matches the token in the raw descriptor, so an undeclared one fails the build
-# wherever it appears. Hence the prose.)
-#
-# So the number is written twice -- here and as SDK_VERSION in the install hook
-# below -- and the two MUST be bumped together. That is the same contract v2
-# had (its README said so, and tools/kitcheck asserted it); what is new is that
-# this field is now the kit's published tag, so a stale value here no longer
-# just misreports, it names the image.
-version: "4.44.0"
+# This matters because the field is the kit's PUBLISHED TAG. An earlier draft
+# wrote the number twice -- here as a literal and again as the hook's
+# SDK_VERSION -- with nothing enforcing agreement, so bumping one and missing
+# the other would publish `sbx/firecrawl:4.44.0` carrying 4.45.0 and offer a
+# provide that refused a `>= 4.45` require the image actually satisfied.
+version: "${{ kit.args.version }}"
 
-# Unversioned provides are refused at publish (SPEC-v3 §9.2), and with no
-# version of its own this entry takes the descriptor's `version:` above --
-# which is the SDK release, so the fallback says something true here.
-provides: ["firecrawl-py"]
+# Versioned explicitly rather than leaning on the descriptor-version fallback
+# SPEC-v3 §9.2 provides: it is the same arg either way, and saying so makes the
+# provide readable without resolving a fallback.
+provides: ["firecrawl-py@${{ kit.args.version }}"]
+
+args:
+  version:
+    default: "4.44.0"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+    description: firecrawl-py release to install
+    buildArg: FIRECRAWL_SDK_VERSION
 
 capabilities:
   # MIGRATION NOTE: v2's flat `permissions.network.allow` listed install-time
@@ -95,7 +98,7 @@ capabilities:
         # once.
         - command: |
             set -eu
-            SDK_VERSION=4.44.0
+            SDK_VERSION=${{ kit.args.version }}
 
             command -v python3 >/dev/null 2>&1 || {
               echo "firecrawl kit: python3 not found. Every docker/sandbox-templates image ships python3 and python3-pip; on a custom base image, install them before layering this kit." >&2

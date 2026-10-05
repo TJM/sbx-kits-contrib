@@ -56,8 +56,8 @@ fc.search("flight prices", sources=["alexandria"])        # Alexandria (beta): d
 
 - **Install**: `pip install --user firecrawl-py==<pinned>` as user `1000`, followed by an import check, so a
   broken install fails sandbox creation instead of surfacing as a missing module mid-task. The pin lives in
-  `firecrawl.yaml`, in two places that must agree: `SDK_VERSION` in the install hook, and the descriptor's
-  own `version:` (which is also the published tag).
+  `firecrawl.yaml`, once: a build-phase `version` arg that the descriptor's own `version:` (the published
+  tag), its `provides` entry and the install hook all resolve from.
 - **Credential**: one `apiKey` credential, `proxyManaged`, injected as a bearer token on `api.firecrawl.dev`
   only. In-container `FIRECRAWL_API_KEY` is the `proxy-managed` sentinel.
 - **Network**: `pypi.org` and `files.pythonhosted.org` during the install phase, `api.firecrawl.dev` at
