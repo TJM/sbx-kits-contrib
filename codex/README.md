@@ -259,7 +259,7 @@ carries a Docker engine and requests Docker-in-Docker.
 
 There is one artifact rather than two. Under v2 this kit named a separately
 published `docker.io/sbx/codex-image` in `sandbox.image` and the kit itself
-shipped as `docker.io/sbx/codex`; a v3 kit is one OCI image carrying both
+shipped as `docker.io/sbx/codex-kit`; a v3 kit is one OCI image carrying both
 the declarations (in a manifest annotation) and the content (in its layers), so
 the published kit *is* the image the sandbox boots. The name is derived from the
 kit directory and enforced repo-wide — see
