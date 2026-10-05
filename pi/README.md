@@ -116,18 +116,25 @@ from the kit it booted from.
 ### Pinning a kit revision
 
 `latest` follows `main`, so it moves. Every build also publishes the version
-tag the descriptor resolves to, pointing at the same digest — pin that to hold
-a sandbox on a known revision of this kit:
+tag the descriptor resolves to, which names the pi release inside:
 
 ```console
 sbx run "docker.io/sbx/pi:0.86.1"
 ```
 
-That pins **pi as well as the kit**, which it did not under v2. A v3 workload's
-layers *are* the root filesystem, so the pi binary ships inside the kit rather
-than in a separately rolling `sandbox.image` the descriptor pointed at — an
-immutable kit tag resolves to one digest, and that digest holds one pi release
-forever.
+That names **pi as well as the kit**, which it did not under v2. A v3
+workload's layers *are* the root filesystem, so the pi binary ships inside the
+kit rather than in a separately rolling `sandbox.image` the descriptor pointed
+at.
+
+**The version tag is not immutable, though.** The nightly re-pushes it with a
+fresh base and a fresh install — that is what the nightly is for — so the pi
+release stays put while everything underneath it moves. To hold the actual
+bytes still, pin the digest:
+
+```console
+sbx run "docker.io/sbx/pi@sha256:<digest>"
+```
 
 The `latest` tag moves with the kit, but not with pi: the descriptor pins the
 release in `args.version`, hands it to the recipe as `PI_VERSION`, and expands
