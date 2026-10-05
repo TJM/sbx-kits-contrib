@@ -67,6 +67,31 @@ matching-stem rule is also what keeps `spec/`, `tck/`, `scripts/` and `skills/`
 out without an ignore list: they hold no file named after themselves, so they
 are not kits by construction rather than by exception.
 
+A name is also checked against `check-kit-name.sh` below; a refusal fails the
+listing rather than silently dropping the directory.
+
+## `check-kit-name.sh` — names that would publish over something else
+
+Refuses a kit name ending in `-kit` or `-image`. Exit 0 usable, 1 reserved,
+2 usage.
+
+```bash
+./scripts/check-kit-name.sh claude        # ok
+./scripts/check-kit-name.sh claude-kit    # refused
+```
+
+A v3 kit publishes as `<registry>/<namespace>/<name>`, and `-kit` / `-image`
+are the v2 scheme's two names for one kit, still published from the frozen v2
+branch into the same `sbx` namespace. So `foo-kit` would resolve to
+`sbx/foo-kit` and overwrite the v2 artifact belonging to `foo`.
+
+The rule lives in one file because it has to hold at four moments:
+`discover-kits.sh` lists kits, `publish-kit.sh` and `kit-meta.sh` compose a
+reference from an argument, and `check-release-tag.sh` takes a name out of a
+git tag a human pushed. The last three are not fed by discovery, so a guard in
+the lister alone would not cover a hand-run `publish-kit.sh claude-kit` or a
+`claude-kit/v1.0.0` tag.
+
 ## `kit-version.sh` — the version a kit publishes under
 
 Resolves the version that becomes the kit's image tag. One resolver, so

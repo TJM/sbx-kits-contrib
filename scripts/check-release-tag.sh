@@ -81,6 +81,11 @@ if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
   exit 1
 fi
 
+# A release tag is pushed by a human and reaches no discovery, so the reserved
+# suffix is checked here too: `claude-kit/v1.0.0` would otherwise publish over
+# the v2 artifact for `claude`.
+"$SCRIPT_DIR/check-kit-name.sh" "$kit" || exit 1
+
 descriptor="$REPO_ROOT/$kit/$kit.yaml"
 [ -f "$descriptor" ] || descriptor="$REPO_ROOT/$kit/$kit.yml"
 if [ ! -f "$descriptor" ]; then

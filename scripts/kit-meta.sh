@@ -50,6 +50,10 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # can pollute the stream CI reads.
 exec 3>&1 1>&2
 
+# Same rule as publish-kit.sh, for the same reason: this composes a repository
+# name from $1 and is not fed by discovery.
+"$SCRIPT_DIR/check-kit-name.sh" "$kit" || exit 1
+
 descriptor="$REPO_ROOT/$kit/$kit.yaml"
 [ -f "$descriptor" ] || descriptor="$REPO_ROOT/$kit/$kit.yml"
 [ -f "$descriptor" ] || { echo "error: no kit '${kit}' at the repo root (expected ${kit}/${kit}.yaml)"; exit 1; }

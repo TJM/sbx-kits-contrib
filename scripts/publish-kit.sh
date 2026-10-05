@@ -115,6 +115,10 @@ esac
 # choose, so a kit cannot aim the push at a repository this repository does not
 # own. (v2 had to read `sandbox.image` out of the spec, which is why it also
 # needed a check-image-ref.sh to police what it read.)
+# Checked HERE, not only in discovery: this script takes its kit from $1, so a
+# hand-run `publish-kit.sh claude-kit` never passes discover-kits.sh at all.
+"$SCRIPT_DIR/check-kit-name.sh" "$kit" || exit 1
+
 ref="${REGISTRY}/${IMAGE_NAMESPACE}/${kit}"
 
 # One resolver for the publish tag and for the release-tag check, so a released

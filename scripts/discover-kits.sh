@@ -17,14 +17,10 @@
 # list: `spec/`, `tck/`, `scripts/` and `skills/` hold no file named after
 # themselves, so they are not kits by construction rather than by exception.
 #
-# RESERVED SUFFIXES. A kit may not be named `*-kit` or `*-image`. Those are the
-# v2 publishing scheme's two names for one kit (`claude-kit` carried the spec,
-# `claude-image` the base), and they are still published from the frozen v2
-# branch into the same `sbx` namespace this one publishes to. A kit directory
-# named `foo-kit` would resolve to `sbx/foo-kit` and land on the v2 artifact for
-# a kit called `foo` — a silent overwrite across two generations, in the one
-# place nothing downstream would notice. Refused here rather than in a workflow
-# because this script is what every caller agrees "a kit" means.
+# RESERVED SUFFIXES. A kit may not be named `*-kit` or `*-image`; the reason is
+# delegated to check-kit-name.sh, which is also what the two scripts that
+# COMPOSE a published reference call, and what check-release-tag.sh calls for a
+# name that arrived in a git tag. A guard here alone would not cover those.
 #
 # Checked in a FIRST PASS, before a single name is printed, so the refusal
 # cannot be read as a short list. Callers consume this through process
@@ -58,14 +54,7 @@ for dir in */; do
 done
 
 for kit in ${kits[@]+"${kits[@]}"}; do
-  case "$kit" in
-    *-kit | *-image)
-      echo "error: kit directory '${kit}' uses a reserved suffix" >&2
-      echo "       '-kit' and '-image' name v2 artifacts in the same Hub" >&2
-      echo "       namespace; publishing this kit would overwrite one." >&2
-      exit 1
-      ;;
-  esac
+  "$SCRIPT_DIR/check-kit-name.sh" "$kit" || exit 1
 done
 
 # The empty case is handled before printf rather than by it: `printf '%s\n'`
