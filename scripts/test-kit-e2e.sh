@@ -239,18 +239,40 @@ declared_names() {
 
 requirement_names() { declared_names "$1" requires; }
 
-# True when the kit at $1 and the kit directory $2 both provide a capability.
-# v3 refuses such a set ("provided by more than one kit"), so a base that
-# overlaps the mixin is not a base at all.
-provides_overlap() {
-  _mix=$(declared_names "$1" provides)
-  _base_desc="$2/$(basename "$2").yaml"
-  [ -f "$_base_desc" ] || _base_desc="$2/$(basename "$2").yml"
-  [ -f "$_base_desc" ] || return 1
-  _base=$(declared_names "$_base_desc" provides)
-  for _a in $_mix; do
-    for _b in $_base; do
-      [ "$_a" = "$_b" ] && return 0
+# The credential services a descriptor declares. `service:` appears only under
+# credential@1 in this repo (checked), so the indent-anchored match is enough
+# without tracking which capability block we are inside.
+credential_services() {
+  awk '{ line = $0; sub(/#.*/, "", line)
+         if (line ~ /^[[:space:]]+service:[[:space:]]*[^[:space:]]/) {
+           sub(/^[[:space:]]+service:[[:space:]]*/, "", line)
+           sub(/[[:space:]]+$/, "", line)
+           gsub(/^["'"'"']|["'"'"']$/, "", line)
+           print line } }' "$1" | sort -u
+}
+
+# True when composing the mixin at $1 onto the kit directory $2 is refused
+# outright. Two ways, both fatal at create and neither visible until then:
+#
+#   provides   "capability X is provided by more than one kit"
+#   credential "credential (X, runtime) is declared by more than one kit"
+#
+# The second is why `claude` cannot be every mixin's base: 16 agent mixins
+# declare the `anthropic` credential it also declares.
+base_conflicts() {
+  _desc="$2/$(basename "$2").yaml"
+  [ -f "$_desc" ] || _desc="$2/$(basename "$2").yml"
+  [ -f "$_desc" ] || return 0
+  for _field in provides credential; do
+    if [ "$_field" = provides ]; then
+      _mix=$(declared_names "$1" provides); _base=$(declared_names "$_desc" provides)
+    else
+      _mix=$(credential_services "$1"); _base=$(credential_services "$_desc")
+    fi
+    for _a in $_mix; do
+      for _b in $_base; do
+        [ "$_a" = "$_b" ] && return 0
+      done
     done
   done
   return 1
@@ -298,6 +320,7 @@ provides_overlap() {
 host=""
 host_source=""
 host_is_kit=yes
+host_conflict=""
 if [ "$kind" = "mixin" ]; then
   if [ -n "${E2E_HOST:-}" ]; then
     host=$E2E_HOST
@@ -307,6 +330,13 @@ if [ "$kind" = "mixin" ]; then
       dep_descriptor="$REPO_ROOT/$dep/$dep.yaml"
       if [ -f "$dep_descriptor" ]; then
         if [ "$(descriptor_field "$dep_descriptor" kind)" = "workload" ]; then
+          # Even a base the kit asked for is unusable if the two contend for
+          # the same capability or credential. gstack-mixin is the case: it
+          # requires `claude` and declares `anthropic`, which claude owns.
+          if base_conflicts "$descriptor" "$REPO_ROOT/$dep"; then
+            host_conflict=$dep
+            continue
+          fi
           host="./$dep"
           host_source="the kit's requires:, which names a workload kit in this repo"
           break
@@ -324,23 +354,38 @@ if [ "$kind" = "mixin" ]; then
       host_is_kit=no
       break
     done
-    if [ -z "$host" ]; then
+    # Only when the kit asked for nothing. A kit that DID ask, and whose answer
+    # conflicts, must not be quietly rehomed onto a base that cannot satisfy the
+    # requirement anyway — it skips below instead.
+    if [ -z "$host" ] && [ -z "$host_conflict" ]; then
       host="./claude"
       host_source="the default workload kit (the kit requires no particular base)"
       # A base providing what the mixin provides is refused as incoherent, so
       # fall to the first workload that does not. This is what `claude-mixin`
       # needs: it provides `claude`, same as the default base.
-      if provides_overlap "$descriptor" "$REPO_ROOT/claude"; then
+      if base_conflicts "$descriptor" "$REPO_ROOT/claude"; then
         host=""
         for cand in $("$SCRIPT_DIR/discover-kits.sh"); do
           [ "$(descriptor_field "$REPO_ROOT/$cand/$cand.yaml" kind)" = "workload" ] || continue
-          provides_overlap "$descriptor" "$REPO_ROOT/$cand" && continue
+          base_conflicts "$descriptor" "$REPO_ROOT/$cand" && continue
           host="./$cand"
-          host_source="the first workload kit not providing what this mixin provides"
+          host_source="the first workload kit that does not contend with this mixin"
           break
         done
       fi
     fi
+  fi
+  if [ -z "$host" ] && [ -n "$host_conflict" ]; then
+    cat >&2 <<EOF
+SKIP: $kit_name requires "$host_conflict", and composing with it is refused.
+
+Both declare the same capability or credential, and v3 gives each one owner, so
+the kit this mixin asks for is the one kit it cannot sit on. No other workload
+here satisfies the requirement. It needs a base that carries the requirement
+without owning the credential — a shell workload — which this repo does not have.
+
+EOF
+    exit 0
   fi
   if [ "$host_is_kit" = "no" ]; then
     cat >&2 <<EOF
@@ -742,12 +787,20 @@ sbx --app-name "$APP_NAME" exec "$sandbox_name" -- true </dev/null
 # ARTIFACT stages it; this checks that composing the kit actually landed it, which
 # is the half a conformance run cannot see. `test -s` and not `test -f`: an empty
 # context file is a kit whose guidance silently says nothing.
+# Comments are stripped BEFORE matching: eight descriptors here carry a prose
+# comment mentioning `contentFile:`, and matching one yields a staged path made
+# of English, which the check below then fails on.
 context_file=$(awk '
-  /contentFile:/ {
-    sub(/^.*contentFile:[[:space:]]*/, "")
-    gsub(/^["'"'"']|["'"'"']$/, "")
-    print
-    exit
+  {
+    line = $0
+    sub(/#.*/, "", line)
+    if (line ~ /^[[:space:]]*contentFile:[[:space:]]*[^[:space:]]/) {
+      sub(/^[[:space:]]*contentFile:[[:space:]]*/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      gsub(/^["'"'"']|["'"'"']$/, "", line)
+      print line
+      exit
+    }
   }
 ' "$descriptor")
 if [ -n "$context_file" ]; then
