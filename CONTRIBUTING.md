@@ -65,7 +65,7 @@ Pick an existing kit closest in shape to what you want to build and read it end-
 Every kit should ship a `README.md`. The structure isn't mandatory, but the existing kits converge on:
 
 - **Title and one-paragraph description** of what the kit does and, for a mixin, what it pairs with.
-- **Usage** — the `sbx run` invocation and any host-side prerequisites. Lead with the published image, `docker.io/docker/sbx-kit-<kit>:latest` — every kit here publishes automatically (see [`PUBLISHING.md`](./PUBLISHING.md)), so it is the primary way to consume one — then the git-URL form, then the local-path form.
+- **Usage** — the `sbx run` invocation and any host-side prerequisites. Lead with the published image, `docker.io/sbx/<kit>:latest` — every kit here publishes automatically (see [`PUBLISHING.md`](./PUBLISHING.md)), so it is the primary way to consume one — then the git-URL form, then the local-path form.
 - **How *X* works** — short sections explaining the non-obvious decisions, so the next reviewer doesn't have to reverse-engineer the descriptor. Pinning choices, why a host is or isn't in the allow list, why an install runs the way it does.
 - **Cleanup**, if the kit creates state on the host.
 

@@ -86,7 +86,7 @@ sbx secret set-custom -g \
 ## Usage
 
 ```console
-sbx run "docker.io/docker/sbx-kit-hermes-agent:latest"
+sbx run "docker.io/sbx/hermes-agent:latest"
 ```
 
 Or from a git URL targeting this repo:

@@ -12,7 +12,7 @@ A mixin kit that prepares a sandbox for [T3 Code](https://docs.docker.com/ai/san
 ## Usage
 
 ```console
-sbx run claude --kit "docker.io/docker/sbx-kit-t3code:latest" .
+sbx run claude --kit "docker.io/sbx/t3code:latest" .
 ```
 
 Or straight from this repository over git:

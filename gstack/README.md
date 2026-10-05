@@ -25,7 +25,7 @@ every skill available — nothing installs at sandbox creation.
 ## Usage
 
 ```console
-$ sbx run "docker.io/docker/sbx-kit-gstack:latest"
+$ sbx run "docker.io/sbx/gstack:latest"
 ```
 
 Or from a git URL targeting this repo:
@@ -72,7 +72,7 @@ the image the sandbox boots from. This kit builds and publishes its own, from
 [`gstack.dockerfile`](./gstack.dockerfile) in this directory:
 
 ```
-docker.io/docker/sbx-kit-gstack
+docker.io/sbx/gstack
 └── FROM docker/sandbox-templates:claude-code
     ├── Bun 1.3.10 (/usr/local)
     ├── /opt/playwright-browsers        Chromium + xvfb/fonts for /browse
@@ -83,7 +83,7 @@ docker.io/docker/sbx-kit-gstack
 ```
 
 The `-image` suffix distinguishes the base image from the kit itself: the
-kit is published separately as an OCI artifact at `docker.io/docker/sbx-kit-gstack`
+kit is published separately as an OCI artifact at `docker.io/sbx/gstack`
 (see [Usage](#usage) above).
 
 gstack publishes no release tags — the image pins a commit SHA, declared as

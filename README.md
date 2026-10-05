@@ -206,8 +206,8 @@ A workload *is* the agent, so it goes in the first positional slot where a built
 The primary way to consume a kit from this repo is its published OCI image on Docker Hub — every kit here is discovered and published automatically (see [`PUBLISHING.md`](./PUBLISHING.md)), so it exists the moment a change merges to `main`:
 
 ```console
-sbx run docker.io/docker/sbx-kit-claude:latest .
-sbx run docker.io/docker/sbx-kit-claude:latest --kit docker.io/docker/sbx-kit-mise:latest .
+sbx run docker.io/sbx/claude:latest .
+sbx run docker.io/sbx/claude:latest --kit docker.io/sbx/mise:latest .
 ```
 
 Or target this repo directly over git:

@@ -92,7 +92,7 @@ invented number.
 
 ## `publish-kit.sh` — build and push a kit
 
-Publishes one kit as an image to `<registry>/<namespace>/sbx-kit-<kit>`, tagged
+Publishes one kit as an image to `<registry>/<namespace>/<kit>`, tagged
 with its resolved version and (unless `MOVE_LATEST=false`) the rolling tag, both
 from one `docker buildx build` so they cannot resolve to different digests.
 `publish-one-kit.yml` is wiring around this; the command line is here so it can
@@ -103,8 +103,8 @@ DRY_RUN=1 scripts/publish-kit.sh claude     # build it, push nothing
 scripts/publish-kit.sh claude               # build and push
 ```
 
-`REGISTRY`, `IMAGE_NAMESPACE`, `IMAGE_NAME_PREFIX` and `IMAGE_TAG_LATEST`
-default to `docker.io`, `docker`, `sbx-kit-` and `latest`. A real run needs a
+`REGISTRY`, `IMAGE_NAMESPACE` and `IMAGE_TAG_LATEST` default to
+`docker.io`, `sbx` and `latest`. A real run needs a
 `docker login` to the namespace; nothing else has to be installed, because the
 kit frontend is named on the descriptor's first line and BuildKit pulls it.
 
@@ -161,7 +161,7 @@ credentials for the scoped daemon.
 ## `hub-repo-ready.sh` — does a Hub repository hold anything?
 
 ```bash
-scripts/hub-repo-ready.sh docker/sbx-kit-claude
+scripts/hub-repo-ready.sh sbx/claude
 ```
 
 Prints `ready=true` or `ready=false`. The overview sync asks this first: Hub only
@@ -207,7 +207,7 @@ against a tag **before** pushing it:
 It refuses a tag that is malformed, names a kit that does not exist, or names a
 version the kit does not publish. The last one is the point: the published tag
 comes from the descriptor, not from the git tag, so without this check a
-`claude/v9.9.9` tag publishes `sbx-kit-claude:2.1.267` — a release announcing a
+`claude/v9.9.9` tag publishes `claude:2.1.267` — a release announcing a
 version that exists nowhere but in git.
 
 It asks `kit-version.sh` rather than reading a literal `version:` itself, so it

@@ -20,7 +20,7 @@ on an npm install.
 ## Usage
 
 ```console
-sbx run "docker.io/docker/sbx-kit-pi:latest"
+sbx run "docker.io/sbx/pi:latest"
 ```
 
 Or from a git URL targeting this repo:
@@ -64,7 +64,7 @@ with `sbx secret set anthropic`.
 **2. Start it.**
 
 ```console
-sbx run "docker.io/docker/sbx-kit-pi:latest"
+sbx run "docker.io/sbx/pi:latest"
 ```
 
 You land in pi's TUI. `pi` is the entrypoint and there is no gateway or daemon
@@ -102,7 +102,7 @@ Then recreate:
 
 ```console
 sbx rm -f <sandbox-name>
-sbx run "docker.io/docker/sbx-kit-pi:latest"
+sbx run "docker.io/sbx/pi:latest"
 ```
 
 Recreating picks up a newer *kit*, but not a newer pi on its own: the pi
@@ -115,12 +115,12 @@ from the kit it booted from.
 
 ### Pinning a kit revision
 
-`latest` follows `main`, so it moves. Every build also publishes an immutable
-`<YYYYMMDD>-<sha>` tag resolving to the same digest — pin that to hold a
-sandbox on a known revision of this kit:
+`latest` follows `main`, so it moves. Every build also publishes the version
+tag the descriptor resolves to, pointing at the same digest — pin that to hold
+a sandbox on a known revision of this kit:
 
 ```console
-sbx run "docker.io/docker/sbx-kit-pi:20260828-2121f50cbf929602a6f0305feed51acb3f872980"
+sbx run "docker.io/sbx/pi:0.86.1"
 ```
 
 That pins **pi as well as the kit**, which it did not under v2. A v3 workload's
@@ -267,7 +267,7 @@ agent-owned — so `pi install` and `pi update --self` work inside the sandbox.
 
 There is no longer a separately published `docker.io/sbx/pi-image` for a
 `sandbox.image:` field to point at: a v3 Kit is one OCI image carrying both
-the declarations and the content, published at `docker.io/docker/sbx-kit-pi` (see
+the declarations and the content, published at `docker.io/sbx/pi` (see
 [Usage](#usage) above). [`../pi-mixin`](../pi-mixin) is the same agent as an
 overlay you layer onto a shell base instead.
 
