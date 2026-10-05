@@ -353,7 +353,7 @@ shape, the versioned provides. Run it the same way locally as CI does:
 # https://github.com/docker/sandbox-kit-spec/releases
 cd my-kit
 docker buildx build . -f my-kit.yaml --output type=oci,dest=/tmp/k,tar=false -t my-kit:1.4.2
-kit-tck kit --layout /tmp/k 1.4.2
+kit-tck validate --layout /tmp/k 1.4.2
 ```
 
 The last argument is the **tag alone**, not `my-kit:1.4.2`.

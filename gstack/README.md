@@ -126,7 +126,7 @@ own, so it follows the bump without being edited.
 
 ```console
 $ cd gstack && docker buildx build . -f gstack.yaml --output type=oci,dest=/tmp/gstack-kit,tar=false
-$ kit-tck kit --layout /tmp/gstack-kit 1.57.10.0
+$ kit-tck validate --layout /tmp/gstack-kit 1.57.10.0
 ```
 
 The descriptor is the build target, not the recipe: its `# syntax=` line

@@ -111,8 +111,8 @@ if [ "${1:-}" = "--ref" ]; then
   ref=$1
   shift
   resolve_kit_tck
-  echo "==> kit-tck kit ${ref}"
-  exec "$kit_tck" kit "$ref" "$@"
+  echo "==> kit-tck validate ${ref}"
+  exec "$kit_tck" validate "$ref" "$@"
 fi
 
 validate_only=
@@ -230,5 +230,5 @@ kit_build \
 # level; SPEC-v3 §9.3 says consumers fall back to the platform manifest, which
 # still carries them, so kit-tck reports `index-annotations` as warned and still
 # concludes "conforms" with exit 0. Do not add a grep for "warned" here.
-echo "==> kit-tck kit --layout ${layout} ${LAYOUT_TAG}"
-"$kit_tck" kit --layout "$layout" "$LAYOUT_TAG" "$@"
+echo "==> kit-tck validate --layout ${layout} ${LAYOUT_TAG}"
+"$kit_tck" validate --layout "$layout" "$LAYOUT_TAG" "$@"

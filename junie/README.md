@@ -178,7 +178,7 @@ up base-image changes.
 
 ```console
 cd junie && docker buildx build . -f junie.yaml --output type=oci,dest=/tmp/junie-kit,tar=false
-kit-tck kit --layout /tmp/junie-kit 26.9.21
+kit-tck validate --layout /tmp/junie-kit 26.9.21
 ```
 
 The descriptor is the build target, not the recipe: its

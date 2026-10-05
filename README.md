@@ -309,7 +309,7 @@ This builds the kit and prints what it resolved to — kind, schema version, and
 
 cd my-kit
 docker buildx build . -f my-kit.yaml --output type=oci,dest=/tmp/k,tar=false -t my-kit:1.4.2
-kit-tck kit --layout /tmp/k 1.4.2
+kit-tck validate --layout /tmp/k 1.4.2
 ```
 
 Note the last argument: `kit-tck` takes the **tag alone**, not `my-kit:1.4.2`. A passing run prints the check count and `✓ conforms`.
