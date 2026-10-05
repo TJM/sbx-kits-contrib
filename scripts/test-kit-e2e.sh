@@ -202,11 +202,12 @@ fi
 #     after `requires:`, and treating `#` as "still inside" would scan English
 #     prose for requirement names — which silently picks a base out of a comment
 #     that happens to mention an agent.
-requirement_names() {
-  awk '
-    /^requires:/ {
+# $2 is the field: `requires` or `provides`. Same grammar, same traps.
+declared_names() {
+  awk -v field="$2" '
+    $0 ~ "^" field ":" {
       rest = $0
-      sub(/^requires:[[:space:]]*/, "", rest)
+      sub("^" field ":[[:space:]]*", "", rest)
       in_req = 1
       if (rest != "") print rest
       next
@@ -217,7 +218,7 @@ requirement_names() {
       sub(/#.*/, "", line)
       if (line ~ /[^[:space:]]/) print line
     }
-  ' "$1" | tr -d '[]",' | tr ' ' '\n' | while IFS= read -r token; do
+  ' "$1" | sed 's/\${{[^}]*}}//g; s/\${{.*//' | tr -d '[]",' | tr ' ' '\n' | while IFS= read -r token; do
     # Cut a version constraint in either spelling: `claude@2.1` or `claude>=2.1`.
     token=${token%%@*}
     token=${token%%[<>=]*}
@@ -227,9 +228,32 @@ requirement_names() {
       # `deb/jq` and friends name a distribution package, satisfied by whatever
       # base is used rather than by a kit in this repo.
       */*) continue ;;
+      # Debris from an unexpanded `${{ kit.args.x }}`, which `provides:` entries
+      # carry and the sed above does not catch when it spans lines. Left in, two
+      # kits "overlap" on `}}` and every composition looks incoherent.
+      *'{'*|*'}'*|*'$'*|kit.args.*) continue ;;
     esac
     printf '%s\n' "$token"
   done
+}
+
+requirement_names() { declared_names "$1" requires; }
+
+# True when the kit at $1 and the kit directory $2 both provide a capability.
+# v3 refuses such a set ("provided by more than one kit"), so a base that
+# overlaps the mixin is not a base at all.
+provides_overlap() {
+  _mix=$(declared_names "$1" provides)
+  _base_desc="$2/$(basename "$2").yaml"
+  [ -f "$_base_desc" ] || _base_desc="$2/$(basename "$2").yml"
+  [ -f "$_base_desc" ] || return 1
+  _base=$(declared_names "$_base_desc" provides)
+  for _a in $_mix; do
+    for _b in $_base; do
+      [ "$_a" = "$_b" ] && return 0
+    done
+  done
+  return 1
 }
 
 # WHAT A MIXIN COMPOSES ONTO
@@ -250,7 +274,10 @@ requirement_names() {
 #      against a hardcoded list of built-ins: such a list goes stale silently,
 #      whereas sbx rejects an unknown agent by name, which is a better error than
 #      composing onto the wrong base and failing somewhere inside the build.
-#   4. The `<base>-mixin` naming convention, for a mixin that requires nothing.
+#   4. (removed) The `<base>-mixin` naming convention sent `foo-mixin` to `foo`.
+#      That is refused by construction: the two are the same agent in two
+#      shapes and both declare `provides: [foo]`, so the set is incoherent --
+#      "capability is provided by more than one kit". True of all 30 pairs here.
 #   5. The `claude` WORKLOAD KIT in this repo.
 #
 # Step 5 was the built-in `shell` agent, on the reasoning that it is the cheapest
@@ -298,19 +325,21 @@ if [ "$kind" = "mixin" ]; then
       break
     done
     if [ -z "$host" ]; then
-      case "$kit_name" in
-        *-mixin)
-          base=${kit_name%-mixin}
-          if [ -f "$REPO_ROOT/$base/$base.yaml" ]; then
-            host="./$base"
-            host_source="the <base>-mixin naming convention (the kit declares no base requirement)"
-          fi
-          ;;
-      esac
-    fi
-    if [ -z "$host" ]; then
       host="./claude"
       host_source="the default workload kit (the kit requires no particular base)"
+      # A base providing what the mixin provides is refused as incoherent, so
+      # fall to the first workload that does not. This is what `claude-mixin`
+      # needs: it provides `claude`, same as the default base.
+      if provides_overlap "$descriptor" "$REPO_ROOT/claude"; then
+        host=""
+        for cand in $("$SCRIPT_DIR/discover-kits.sh"); do
+          [ "$(descriptor_field "$REPO_ROOT/$cand/$cand.yaml" kind)" = "workload" ] || continue
+          provides_overlap "$descriptor" "$REPO_ROOT/$cand" && continue
+          host="./$cand"
+          host_source="the first workload kit not providing what this mixin provides"
+          break
+        done
+      fi
     fi
   fi
   if [ "$host_is_kit" = "no" ]; then
