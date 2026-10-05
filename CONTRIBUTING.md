@@ -114,7 +114,8 @@ sbx run ./my-workload --kit ./my-mixin .    # a mixin, composed
 And the conformance suite, against the built artifact:
 
 ```console
-go install github.com/docker/sandbox-kit-spec/v3/cmd/kit-tck@latest
+# kit-tck: download the binary for your platform from
+# https://github.com/docker/sandbox-kit-spec/releases
 cd my-kit
 docker buildx build . -f my-kit.yaml --output type=oci,dest=/tmp/k,tar=false -t my-kit:1.4.2
 kit-tck kit --layout /tmp/k 1.4.2

@@ -304,7 +304,8 @@ This builds the kit and prints what it resolved to — kind, schema version, and
 `kit-tck` judges a **built artifact** against the specification — the descriptor in the manifest annotation, the staged sources, the layer shape, the derived provides. Build to an OCI layout and point it at the result:
 
 ```console
-go install github.com/docker/sandbox-kit-spec/v3/cmd/kit-tck@latest
+# kit-tck: download the binary for your platform from
+# https://github.com/docker/sandbox-kit-spec/releases
 
 cd my-kit
 docker buildx build . -f my-kit.yaml --output type=oci,dest=/tmp/k,tar=false -t my-kit:1.4.2
@@ -423,5 +424,6 @@ Note that a fork PR does not receive repository secrets, so any leg needing Dock
 
 - **Docker** with buildx — the frontend is a BuildKit frontend, so this is what builds and validates a kit.
 - **`sbx`**, from an **rc or nightly** build. Install from [`docker/sbx-releases`](https://github.com/docker/sbx-releases/releases).
-- **`kit-tck`**, for conformance: `go install github.com/docker/sandbox-kit-spec/v3/cmd/kit-tck@latest`.
+- **`kit-tck`**, for conformance: download the binary for your platform from the
+  [specification's releases](https://github.com/docker/sandbox-kit-spec/releases).
 - **Go 1.23+**, only if you are working on the `spec/` or `tck/` packages.

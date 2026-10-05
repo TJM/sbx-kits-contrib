@@ -190,8 +190,8 @@ you an ordinary image and no kit.
 Exporting an OCI layout rather than loading an image is what lets `kit-tck`
 judge the artifact with no registry involved — it reads the annotations, layers
 and image config the way a consumer would. Note it takes the tag alone, not
-`junie-kit:26.9.21`. Install it with
-`go install github.com/docker/sandbox-kit-spec/v3/cmd/kit-tck@latest`.
+`junie-kit:26.9.21`. Download it for your platform from the
+[specification's releases](https://github.com/docker/sandbox-kit-spec/releases).
 
 ## Customization
 

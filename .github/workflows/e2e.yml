@@ -24,7 +24,12 @@ name: Kit e2e
 # docker, `docker save` it, `sbx template load` it into the scoped daemon's store,
 # create with `--pull=never` — which existed only to stop a stale published image
 # from being tested instead of the branch. With it went this workflow's need for Go
-# (the e2e harness was a `go test`) and for a builder: sbx does the building now.
+# (the e2e harness was a `go test`).
+#
+# It did NOT remove the need for a builder, which is what the deleted dance
+# quietly supplied. sbx does the building now, but it builds through buildx and
+# exports an OCI archive, so the runner still has to offer a builder whose
+# driver can do that. See the setup-buildx-action step below before deleting it.
 
 on:
   workflow_call:

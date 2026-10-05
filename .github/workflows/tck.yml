@@ -205,17 +205,34 @@ jobs:
           set -euo pipefail
           repo=docker/sandbox-kit-spec
 
-          # Newest release, PRERELEASES INCLUDED. The v3 line is a milestone
+          # Newest v3 release, PRERELEASES INCLUDED. The v3 line is a milestone
           # series and nothing in it is flagged "latest", so `gh release
           # download` with no tag (which implies --latest) resolves to nothing.
           # Taking the newest entry keeps the "track the spec" intent the
           # `@latest` install had: kit-tck gains checks as the specification
           # does, and pinning here would quietly stop enforcing new clauses.
-          tag=$(gh release list --repo "$repo" --limit 1 --json tagName --jq '.[0].tagName')
+          #
+          # --exclude-drafts, and the v3 filter rather than a bare --limit 1:
+          # the newest release overall is not necessarily one this consumes. A
+          # draft, or a tag from another series, would resolve here and then
+          # match no asset below.
+          #
+          # The listing is run on its own line rather than inside the
+          # assignment because `tag=$(gh …)` under `set -e` aborts the step on
+          # a non-zero exit, so an auth failure would die with no diagnostic at
+          # all -- which is the one thing the `go install` block this replaced
+          # did tell you. Empty output and a failed call are different
+          # answers and are reported as such.
+          if ! releases=$(gh release list --repo "$repo" --exclude-drafts \
+                            --limit 20 --json tagName 2>&1); then
+            echo "::error::Could not list releases in ${repo}. This runner's" \
+                 "token may not be able to read it. gh said: ${releases}"
+            exit 1
+          fi
+          tag=$(printf '%s' "$releases" | jq -r '[.[].tagName | select(startswith("v3."))][0] // ""')
           if [ -z "$tag" ]; then
-            echo "::error::No release found in ${repo}. If this runner's token" \
-                 "cannot read that repository, the list comes back empty rather" \
-                 "than failing, which is the likeliest cause."
+            echo "::error::${repo} is readable but publishes no v3.* release," \
+                 "so there is no kit-tck build to install."
             exit 1
           fi
 
@@ -228,8 +245,15 @@ jobs:
 
           dir="${RUNNER_TEMP}/kit-tck"
           mkdir -p "$dir"
-          gh release download "$tag" --repo "$repo" \
-            --pattern "$asset" --pattern checksums.txt --dir "$dir" --clobber
+          # A release is created before its archives finish uploading, so a run
+          # landing in that window resolves the new tag and finds no asset.
+          # Named explicitly because "no such asset" reads like a naming bug.
+          if ! gh release download "$tag" --repo "$repo" \
+                 --pattern "$asset" --pattern checksums.txt --dir "$dir" --clobber; then
+            echo "::error::${tag} has no ${asset} yet. If that release was just" \
+                 "cut, its archives may still be uploading; re-run shortly."
+            exit 1
+          fi
 
           # --ignore-missing: checksums.txt covers every platform's asset and we
           # downloaded one. Without it sha256sum fails on the absent entries.
