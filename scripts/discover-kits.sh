@@ -68,4 +68,12 @@ for kit in ${kits[@]+"${kits[@]}"}; do
   esac
 done
 
-printf '%s\n' ${kits[@]+"${kits[@]}"} | sort -u
+# The empty case is handled before printf rather than by it: `printf '%s\n'`
+# with NO operands still applies the format once and writes a bare newline, so a
+# repository with no kit directories would emit one empty line instead of
+# nothing. A caller doing `kits=$(discover-kits.sh | jq -R . | jq -sc .)` then
+# gets `[""]` rather than `[]`, passes its own `!= '[]'` guard, and spawns a
+# matrix leg whose kit name is the empty string.
+[ ${#kits[@]} -gt 0 ] || exit 0
+
+printf '%s\n' "${kits[@]}" | sort -u
