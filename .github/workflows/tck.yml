@@ -173,42 +173,73 @@ jobs:
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v3.11.1
 
       # kit-tck ships with the specification, not with this repository, so the
-      # checks and the clauses they enforce version together. That also makes it a
-      # private-module install: see the step below.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: >-
-          github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        with:
-          go-version-file: go.mod
-
+      # checks and the clauses they enforce version together.
+      #
+      # INSTALLED FROM THE RELEASE ASSET, not `go install`. The spec publishes a
+      # kit-tck binary per platform on every tag, and reaching for `go install
+      # <pkg>@latest` instead walked into two unrelated walls at once:
+      #
+      #   1. A toolchain floor. setup-go installs the version from OUR go.mod
+      #      and pins GOTOOLCHAIN=local, so the install died the moment the
+      #      spec's own floor moved past ours:
+      #        sandbox-kit-spec/v3@v3.0.0-m.8 requires go >= 1.26.8
+      #        (running go 1.26.2; GOTOOLCHAIN=local)
+      #      kit-tck is a TOOL, so the toolchain it needs is the spec's, not
+      #      this module's -- raising our own floor to satisfy it would move it
+      #      for everyone who imports us.
+      #   2. `go install pkg@version` REFUSES any module whose go.mod carries a
+      #      replace directive, and the spec gained one at v3.0.0-m.7
+      #      (cilium/ebpf). No toolchain setting gets past that, so the Go path
+      #      was a dead end from m.7 onward however it was configured.
+      #
+      # The published binary has neither problem, needs no Go at all (which is
+      # why the setup-go step that stood here is gone -- nothing else in this
+      # job uses Go), and is checksum-verified below.
       - name: Install kit-tck
         if: >-
           github.event_name == 'push' ||
           github.event.pull_request.head.repo.full_name == github.repository
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # docker/sandbox-kit-spec is not public, so the module proxy and the
-          # checksum database cannot serve it — both would 404 on a repository
-          # they cannot read. GOPRIVATE routes the fetch straight at git, and the
-          # credential rewrite below is what lets that git fetch authenticate.
-          GOPRIVATE: github.com/docker/*
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global \
-            url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf \
-            "https://github.com/"
-          if ! go install github.com/docker/sandbox-kit-spec/v3/cmd/kit-tck@latest; then
-            echo "::error::Could not install kit-tck. The most likely cause is that this" \
-                 "runner's token cannot read the private docker/sandbox-kit-spec repository."
+          set -euo pipefail
+          repo=docker/sandbox-kit-spec
+
+          # Newest release, PRERELEASES INCLUDED. The v3 line is a milestone
+          # series and nothing in it is flagged "latest", so `gh release
+          # download` with no tag (which implies --latest) resolves to nothing.
+          # Taking the newest entry keeps the "track the spec" intent the
+          # `@latest` install had: kit-tck gains checks as the specification
+          # does, and pinning here would quietly stop enforcing new clauses.
+          tag=$(gh release list --repo "$repo" --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$tag" ]; then
+            echo "::error::No release found in ${repo}. If this runner's token" \
+                 "cannot read that repository, the list comes back empty rather" \
+                 "than failing, which is the likeliest cause."
             exit 1
           fi
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          # @latest rather than a pin, on purpose: kit-tck gains checks as the
-          # specification does, and a pin here would quietly stop enforcing new
-          # clauses. Recording the version it resolved to makes a check that
-          # appeared between two runs explainable from the log.
-          "$(go env GOPATH)/bin/kit-tck" version
 
+          case "$(uname -m)" in
+            x86_64)        arch=amd64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *) echo "::error::unsupported runner arch $(uname -m)"; exit 1 ;;
+          esac
+          asset="kit-tck_${tag#v}_linux_${arch}.tar.gz"
+
+          dir="${RUNNER_TEMP}/kit-tck"
+          mkdir -p "$dir"
+          gh release download "$tag" --repo "$repo" \
+            --pattern "$asset" --pattern checksums.txt --dir "$dir" --clobber
+
+          # --ignore-missing: checksums.txt covers every platform's asset and we
+          # downloaded one. Without it sha256sum fails on the absent entries.
+          ( cd "$dir" && sha256sum --ignore-missing --check checksums.txt )
+
+          tar xzf "${dir}/${asset}" -C "$dir" kit-tck
+          echo "$dir" >> "$GITHUB_PATH"
+          # Recording the version it resolved to makes a check that appeared
+          # between two runs explainable from the log.
+          "${dir}/kit-tck" version
       # matrix.kit comes from directory names in the PR's own checkout
       # (discover-kits.sh); passed via env rather than interpolated into the
       # script text so a directory name containing shell metacharacters can't
