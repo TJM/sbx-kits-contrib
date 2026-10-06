@@ -194,7 +194,16 @@ jobs:
           # stripping all whitespace can't corrupt a legitimate value.
           USER_CLEAN=$(printf '%s' "$USERNAME" | tr -d '[:space:]')
           TOKEN_CLEAN=$(printf '%s' "$TOKEN" | tr -d '[:space:]')
-          printf '%s' "$TOKEN_CLEAN" | sbx --app-name "$APP_NAME" login --username "$USER_CLEAN" --password-stdin
+          # Every matrix job signs in as the same Hub account within a minute,
+          # and Hub answers 429 past its login rate. Backoff spreads them out.
+          n=0
+          until printf '%s' "$TOKEN_CLEAN" | sbx --app-name "$APP_NAME" login --username "$USER_CLEAN" --password-stdin; do
+            n=$((n + 1))
+            [ "$n" -lt 6 ] || { echo "giving up on Docker Hub login after $n attempts" >&2; exit 1; }
+            delay=$((n * 20 + RANDOM % 20))
+            echo "login failed (attempt $n), retrying in ${delay}s" >&2
+            sleep "$delay"
+          done
 
       # matrix.kit comes from directory names in the PR's own checkout, so it is
       # passed via env rather than interpolated into the script text: a directory
