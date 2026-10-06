@@ -85,10 +85,21 @@ WORKDIR /home/agent/workspace
 # than floating. If a future release ever stamps something other than its tag,
 # this is where that shows up, and the honest fix is to look rather than to
 # loosen the comparison.
+#
+# The fetch retries because raw.githubusercontent.com answers 429 often enough
+# to red the publish on its own, and a build that dies on someone else's rate
+# limit says nothing about this kit.
 RUN set -eu; \
     [ -n "${HERMES_VERSION}" ] || { echo "HERMES_VERSION must be set" >&2; exit 1; }; \
     tag="v${HERMES_VERSION}"; \
-    curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/${tag}/scripts/install.sh" -o /tmp/hermes-install.sh; \
+    url="https://raw.githubusercontent.com/NousResearch/hermes-agent/${tag}/scripts/install.sh"; \
+    n=0; \
+    until curl -fsSL "$url" -o /tmp/hermes-install.sh; do \
+      n=$((n + 1)); \
+      [ "$n" -lt 5 ] || { echo "giving up on $url after $n attempts" >&2; exit 1; }; \
+      echo "fetch failed (attempt $n), retrying in $((n * 10))s" >&2; \
+      sleep $((n * 10)); \
+    done; \
     chmod +x /tmp/hermes-install.sh; \
     /tmp/hermes-install.sh --branch "$tag" --skip-setup --skip-browser --skip-computer-use --non-interactive; \
     rm -f /tmp/hermes-install.sh; \
