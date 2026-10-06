@@ -635,14 +635,18 @@ EOF
       fi
     fi
 
-    # The daemon's own log. `failed to run sandbox container` is the daemon's
-    # catch-all, and the cause behind it is scrubbed before it reaches the CLI,
-    # so the log is the only place it exists. Located by find rather than a
-    # fixed path: the state dir is <XDG_STATE_HOME or ~/.local/state>/<platform>/
-    # <app-name>/.../sandboxd, and the intermediate segments are the daemon's
-    # to choose.
-    state_base="${XDG_STATE_HOME:-$HOME/.local/state}"
-    daemon_log=$(find "$state_base" -path "*/${APP_NAME}/*" -name daemon.log 2>/dev/null | head -1)
+    # The daemon's own log. The daemon does not log the cause behind its
+    # `failed to run sandbox container` catch-all, so this rarely names the
+    # fault, but it does show what the daemon was doing. The scoped daemon
+    # publishes a short alias to its state dir; resolve that rather than guess
+    # the nested storage layout.
+    daemon_log=""
+    for alias in "/tmp/sboxd-$(id -u)-${APP_NAME}" "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/*/"${APP_NAME}"/d; do
+      [ -e "$alias" ] || continue
+      state_dir=$(readlink -f "$alias" 2>/dev/null) || continue
+      [ -f "$state_dir/daemon.log" ] && { daemon_log="$state_dir/daemon.log"; break; }
+    done
+    [ -n "$daemon_log" ] || daemon_log=$(find "${XDG_STATE_HOME:-$HOME/.local/state}" -path "*/${APP_NAME}/*" -name daemon.log 2>/dev/null | head -1)
     if [ -n "$daemon_log" ]; then
       echo "" >&2
       echo "Daemon log ($daemon_log), lines mentioning $sandbox_name or the last 60:" >&2
@@ -653,7 +657,7 @@ EOF
       fi
     else
       echo "" >&2
-      echo "(no daemon.log found under $state_base for app-name $APP_NAME)" >&2
+      echo "(no daemon.log found for app-name $APP_NAME)" >&2
     fi
 
     # Only worth raising while the kit was still being resolved or composed: past
