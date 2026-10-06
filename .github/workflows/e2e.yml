@@ -205,9 +205,7 @@ jobs:
         # gets *exactly* the outbound reachability its network-policy@1 capability
         # declares and nothing more, which is what makes this a contract test
         # rather than an assumption. Kit allow-rules are scoped per sandbox and
-        # punch through the default deny (see `ApplyKitNetworkPolicyScoped` in
-        # docker/sandboxes:sandboxd/pkg/server/options_governance.go); kit
-        # deny-rules win over allow-rules (deny-wins).
+        # punch through the default deny; kit deny-rules win over allow-rules.
         #
         # It also reads the policy log on the way out and FAILS on a blocked
         # request even when everything else passed — a hook that pipes an
