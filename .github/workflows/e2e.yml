@@ -226,4 +226,5 @@ jobs:
 
       - name: Sign out of Docker Hub
         if: always()
-        run: sbx logout --yes || true
+        # The confirmation-skip flag is --force from v0.48.0-rc3 and --yes before.
+        run: sbx --app-name "$APP_NAME" logout --force || sbx --app-name "$APP_NAME" logout --yes || true
