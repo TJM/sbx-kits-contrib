@@ -263,15 +263,21 @@ jobs:
 
           dir="${RUNNER_TEMP}/kit-tck"
           mkdir -p "$dir"
-          # A release is created before its archives finish uploading, so a run
-          # landing in that window resolves the new tag and finds no asset.
-          # Named explicitly because "no such asset" reads like a naming bug.
-          if ! gh release download "$tag" --repo "$repo" \
-                 --pattern "$asset" --pattern checksums.txt --dir "$dir" --clobber; then
-            echo "::error::${tag} has no ${asset} yet. If that release was just" \
-                 "cut, its archives may still be uploading; re-run shortly."
-            exit 1
-          fi
+          # The GitHub API answers 5xx often enough across a 98-job matrix to
+          # red a run on its own, so the download retries before giving up.
+          n=0
+          until gh release download "$tag" --repo "$repo" \
+                  --pattern "$asset" --pattern checksums.txt --dir "$dir" --clobber; do
+            n=$((n + 1))
+            if [ "$n" -ge 4 ]; then
+              echo "::error::could not download ${asset} from ${tag} after ${n} attempts." \
+                   "Either the API is failing (see above) or the release was just cut" \
+                   "and its archives are still uploading; re-run shortly."
+              exit 1
+            fi
+            echo "download failed (attempt $n), retrying in $((n * 15))s" >&2
+            sleep $((n * 15))
+          done
 
           # --ignore-missing: checksums.txt covers every platform's asset and we
           # downloaded one. Without it sha256sum fails on the absent entries.
