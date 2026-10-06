@@ -179,7 +179,9 @@ check on its own and the only one available without access to `kit-tck`'s
 
 Drives `sbx run` against a throwaway workspace under a scoped app name with a
 `deny-all` default policy, so a kit's declared egress is tested rather than
-assumed. A mixin is composed onto a resolved base automatically. Needs an `sbx`
+assumed. A blocked request fails the run unless the host is listed in the kit's
+`testdata/e2e-expected-blocked` (telemetry, update checks: the user's call to
+open). A mixin is composed onto a resolved base automatically. Needs an `sbx`
 that understands v3 kits — see `install-sbx.sh` above — and Docker Hub
 credentials for the scoped daemon.
 

@@ -38,7 +38,9 @@
 #   - Picks the base a mixin composes onto, from the mixin's own `requires:`.
 #   - Fails the run when the policy log recorded a blocked request, even if
 #     nothing else complained. See the policy-log check below for why that is not
-#     redundant with the run succeeding.
+#     redundant with the run succeeding. Hosts a kit leaves unreachable on
+#     purpose (telemetry, update checks) are listed one per line in the kit's
+#     testdata/e2e-expected-blocked; blocks on those hosts pass.
 #   - On failure, prints the policy log itself rather than telling you to go read
 #     it — in CI the runner and its daemon are destroyed the moment the job ends.
 #
@@ -851,6 +853,12 @@ fi
 #
 # Skipped when POLICY was cleared, because without a default deny there is nothing
 # to block. ALLOW_BLOCKED=1 downgrades it to a warning while iterating on a kit.
+#
+# Hosts a kit leaves unreachable on purpose (telemetry, update checks) are the
+# user's call to open, so the kit lists them in testdata/e2e-expected-blocked
+# and only a block outside that list fails. Ports and the resolver's search
+# suffix (`<host>.<sandbox>.docker.internal` on DNS blocks) are stripped first.
+expected_blocked_file="$kit_abs/testdata/e2e-expected-blocked"
 if [ -n "$POLICY" ]; then
   stage="egress check"
   echo "==> checking the policy log for blocked requests"
@@ -862,19 +870,44 @@ if [ -n "$POLICY" ]; then
   case "$policy_log" in
     *"Blocked requests"*)
       printf '%s\n' "$policy_log"
-      if [ -n "${ALLOW_BLOCKED:-}" ]; then
+      blocked_hosts=$(printf '%s\n' "$policy_log" | awk -v sb="$sandbox_name" '
+          /^Blocked requests:/ { in_blocked = 1; next }
+          /^Allowed requests:/ { in_blocked = 0 }
+          in_blocked && $1 == sb {
+            host = $3
+            sub(/:[0-9]+$/, "", host)
+            sub("\\." sb "\\.docker\\.internal$", "", host)
+            print host
+          }' | sort -u)
+      expected_blocked=""
+      if [ -f "$expected_blocked_file" ]; then
+        expected_blocked=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$expected_blocked_file" | grep -v '^$' | sort -u)
+      fi
+      # An empty pattern file would make grep -F match every line, so an empty
+      # expected list is handled without grep.
+      if [ -n "$expected_blocked" ]; then
+        unexpected_blocked=$(printf '%s\n' "$blocked_hosts" | grep -vxF -f <(printf '%s\n' "$expected_blocked") || true)
+      else
+        unexpected_blocked=$blocked_hosts
+      fi
+      if [ -z "$unexpected_blocked" ]; then
+        echo "Every blocked host is listed in ${expected_blocked_file#"$kit_abs/"}; the kit leaves them unreachable on purpose."
+      elif [ -n "${ALLOW_BLOCKED:-}" ]; then
         echo "WARNING: blocked requests above; ALLOW_BLOCKED is set, so continuing." >&2
       else
         cat >&2 <<EOF
 
-ERROR: $kit_name reached hosts it does not declare — every row under 'Blocked
-requests' above. The run otherwise succeeded, which is exactly the trap: a
-blocked request often leaves a hook quietly doing nothing instead of failing.
+ERROR: $kit_name reached hosts it does not declare:
+$unexpected_blocked
+
+The run otherwise succeeded, which is exactly the trap: a blocked request often
+leaves a hook quietly doing nothing instead of failing.
 
 Add each host to the right phase of the kit's com.docker.sandbox/network-policy@1
 config (\`install\` for a lifecycle install hook, \`runtime\` for the agent's
-steady state; an absent phase grants nothing), or set ALLOW_BLOCKED=1 to proceed
-anyway while iterating.
+steady state; an absent phase grants nothing). If the kit leaves the host
+unreachable on purpose, list it in testdata/e2e-expected-blocked instead. Or set
+ALLOW_BLOCKED=1 to proceed anyway while iterating.
 EOF
         exit 1
       fi
