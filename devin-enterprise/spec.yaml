@@ -1,0 +1,159 @@
+schemaVersion: "2"
+kind: sandbox
+name: devin-enterprise
+version: "0.1.0"
+displayName: Devin (Enterprise)
+description: >-
+  Devin CLI by Cognition, pinned to a Devin Enterprise deployment
+  (<org>.devinenterprise.com). The sibling `devin` kit targets Cognition's
+  public SaaS; this fork repoints auth, API, and model backends at the
+  enterprise endpoints and takes the org slug as a kit argument.
+
+args:
+  # The enterprise org slug: "acme" for acme.devinenterprise.com. Required —
+  # everything in this kit (the auth redirect, the webapp host written into
+  # credentials.toml, /etc/devin/system.json) derives from it.
+  org:
+    required: true
+    description: 'Enterprise org slug — "acme" for acme.devinenterprise.com'
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+
+sandbox:
+  # Same image as the `devin` kit — it already carries the CLI (installed as
+  # `devin-cli`) plus the stock auth wrapper. No rebuild needed.
+  image: "docker.io/sbx/devin-image:latest"
+  # A kit-provided entrypoint (setup.files below), NOT the image's `devin`
+  # wrapper. The wrapper rewrites credentials.toml to the proxy-managed
+  # sentinel and proves it still authenticates — which relies on the
+  # sandbox proxy's OAuth capture plus Devin credential handoff. On
+  # enterprise deployments that capture never happens: the token endpoint
+  # (api.devinenterprise.com/auth/cli/token) returns only the short-lived
+  # PKCE intermediate (expires_in: 0) and the durable-key handoff does not
+  # fire, so the sentinel can never validate and the wrapper exits 1.
+  # Tracked in https://github.com/docker/sbx-releases/issues/683 — once the
+  # handoff works for non-SaaS hosts this kit can switch to the managed
+  # credential model (credentials[] + oauth block + stock `devin`
+  # entrypoint) the same way `devin` does.
+  #
+  # Until then this kit passes the credential through: login writes the real
+  # durable key to ~/.local/share/devin/credentials.toml and it stays there,
+  # readable by the agent inside the sandbox. That is a weaker credential
+  # posture than the managed kits and is the accepted trade-off here.
+  entrypoint: [/home/agent/devin-entry.sh, "--permission-mode", "dangerous", "--respect-workspace-trust=false"]
+
+permissions:
+  network:
+    allow:
+      # The enterprise platform. <org>.devinenterprise.com serves the
+      # webapp + PKCE sign-in; api.devinenterprise.com is the shared
+      # enterprise API and OAuth token endpoint. `*.` matches exactly one
+      # DNS label.
+      - "*.devinenterprise.com"
+      # Model/seat backend: server.enterprise.windsurf.com (api_server_url),
+      # the shared Windsurf-side enterprise backend.
+      - "*.enterprise.windsurf.com"
+      # Kept from the upstream `devin` kit for the same reasons:
+      # sign-in may touch the SaaS host depending on server-side account
+      # routing.
+      - windsurf.com
+      # Login-time account verification probes the SaaS backend even on
+      # enterprise deployments (observed: Connect permission_denied when
+      # blocked). Egress only — no credential is declared, so nothing is
+      # rewritten.
+      - server.codeium.com
+      # Feature flags reach the login path; upstream observed the CLI hand
+      # out the wrong sign-in URL with this host blocked.
+      - unleash.codeium.com
+      # `devin update` fetches install.sh and the bundle manifest here;
+      # background auto-update is disabled via setup.files, so only an
+      # explicit update reaches them.
+      - cli.devin.ai
+      - static.devin.ai
+      # apt sources shipped by the shell-docker base image.
+      - archive.ubuntu.com
+      - security.ubuntu.com
+      - ports.ubuntu.com
+      - download.docker.com
+
+setup:
+  startup:
+    - command: ["sh", "-c", "{ command -v apt-get && apt-get update -qq -y || true; } >/dev/null 2>&1 </dev/null &"]
+      user: "root"
+      description: Update apt package cache in background
+    # Pin the CLI to the enterprise deployment. /etc/devin/system.json is the
+    # machine-wide policy path on Linux; with enterprise_host set,
+    # `devin auth login` skips the login-method menu and produces a sign-in
+    # URL on <org>.devinenterprise.com instead of the SaaS hosts. Written at
+    # every container start as root (setup.files runs as uid 1000 and cannot
+    # write /etc).
+    - command:
+        - sh
+        - -c
+        - |
+          mkdir -p /etc/devin
+          cat > /etc/devin/system.json <<'EOF'
+          {"enterprise_host": "${{ kit.args.org }}.devinenterprise.com"}
+          EOF
+      user: "root"
+      description: Pin Devin enterprise host via system.json
+    - command:
+        - sh
+        - -c
+        - |
+          set -e
+          [ -n "$MCP_GATEWAY_URL" ] || exit 0
+          mkdir -p "$HOME/.config/devin"
+          cat > "$HOME/.config/devin/mcp_config.json" <<EOF
+          {
+            "mcpServers": {
+              "mcp-gateway": {
+                "url": "$MCP_GATEWAY_URL",
+                "transport": "http",
+                "headers": {
+                  "Authorization": "Bearer $MCP_SENTINEL_TOKEN_NAME"
+                }
+              }
+            }
+          }
+          EOF
+      user: "agent"
+      description: Register the sandbox MCP gateway
+  files:
+    - path: /home/agent/.config/devin/config.json
+      content: '{"auto_update": false}'
+      onlyIfMissing: true
+      description: Disable Devin background updates
+    # Entrypoint: minimal port of the image's devin-entrypoint.sh — keeps
+    # the "run the manual-token login when unauthenticated" bootstrap, drops
+    # the sentinel rewrite that enterprise deployments can't support
+    # (see the entrypoint comment above for why). Written under /home/agent —
+    # the only tree setup.files may target — and invoked by path from
+    # sandbox.entrypoint.
+    - path: /home/agent/devin-entry.sh
+      content: |
+        #!/bin/bash
+        # Entrypoint for the devin-enterprise kit. Runs the CLI's manual
+        # login flow when credentials.toml is absent/blank, then execs
+        # devin-cli. Unlike the image's `devin` wrapper this does NOT
+        # rewrite the key to the proxy sentinel — the enterprise token
+        # endpoint yields a non-capturable intermediate, so the proxy can
+        # never substitute a real credential (docker/sbx-releases#683).
+        set -uo pipefail
+        credentials_file="${HOME}/.local/share/devin/credentials.toml"
+        if [[ ! -f "${credentials_file}" ]] ||
+            ! grep -Eq '^[[:space:]]*windsurf_api_key[[:space:]]*=' "${credentials_file}" ||
+            grep -Eq '^[[:space:]]*windsurf_api_key[[:space:]]*=[[:space:]]*""[[:space:]]*$' "${credentials_file}"; then
+            echo "Not authenticated. Starting Devin login..."
+            if ! devin-cli auth login --force-manual-token-flow; then
+                echo "Login failed." >&2
+                exit 1
+            fi
+        fi
+        exec devin-cli "$@"
+      mode: "0755"
+      description: Entrypoint — login if unauthenticated, then exec devin-cli
+
+# Same reasoning as the `devin` kit: Devin reads AGENTS.md from the
+# workspace root, and there is nothing kit-specific to tell it here.
+agentInstructions:
+  filename: AGENTS.md
