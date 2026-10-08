@@ -1,0 +1,137 @@
+schemaVersion: "2"
+kind: sandbox
+name: devin-enterprise
+version: "0.1.0"
+displayName: Devin (Enterprise)
+description: >-
+  Devin CLI by Cognition, pinned to a Devin Enterprise deployment
+  (<org>.devinenterprise.com) using the managed-credential design of the
+  sibling `devin` kit. REPRO for docker/sbx-releases#683: on enterprise
+  deployments the durable-key credential handoff never fires, so this kit
+  fails at `secure_credentials` ("Failed to secure Devin credentials").
+  The working variant (credential passthrough) is on the
+  `devin-enterprise-kit` branch of this fork.
+
+args:
+  # The enterprise org slug: "acme" for acme.devinenterprise.com. Required —
+  # the auth host, the webapp host written into credentials.toml, and the
+  # /etc/devin/system.json pin all derive from it.
+  org:
+    required: true
+    description: 'Enterprise org slug — "acme" for acme.devinenterprise.com'
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+
+sandbox:
+  image: "docker.io/sbx/devin-image:latest"
+  # Stock upstream wrapper: devin-entrypoint.sh runs the manual-token login,
+  # rewrites credentials.toml to the devin-proxy-managed sentinel, then
+  # verifies it still authenticates — the step that fails on enterprise.
+  entrypoint: [devin, "--permission-mode", "dangerous", "--respect-workspace-trust=false"]
+
+credentials:
+  # Same contract shape as the `devin` kit — one service, OAuth for sign-in,
+  # apiKey injection for steady state — repointed at enterprise hosts.
+  - service: devin
+    description: Devin account credential captured during in-sandbox login
+    apiKey:
+      name: ""
+      inject:
+        # server.enterprise.windsurf.com is the shared enterprise model/seat
+        # backend (api_server_url); api.devinenterprise.com is the shared
+        # enterprise API (devin_api_url); <org>.devinenterprise.com is the
+        # webapp host (devin_webapp_host), which also serves user/team-info
+        # endpoints carrying the bearer.
+        - domain: server.enterprise.windsurf.com
+          header: Authorization
+          format: "Bearer %s"
+        - domain: api.devinenterprise.com
+          header: Authorization
+          format: "Bearer %s"
+        - domain: "${{ kit.args.org }}.devinenterprise.com"
+          header: Authorization
+          format: "Bearer %s"
+    oauth:
+      tokenEndpoint:
+        host: api.devinenterprise.com
+        path: /auth/cli/token
+      resourceHosts:
+        - server.enterprise.windsurf.com
+        - api.devinenterprise.com
+        - "${{ kit.args.org }}.devinenterprise.com"
+      responseFields:
+        accessToken: token
+        refreshToken: token
+      passthrough: true
+      credentialFile:
+        path: "~/.local/share/devin/credentials.toml"
+        template: |
+          api_server_url = "https://server.enterprise.windsurf.com"
+          devin_webapp_host = "${{ kit.args.org }}.devinenterprise.com"
+          devin_api_url = "https://api.devinenterprise.com"
+          windsurf_api_key = "{{.PrimaryApiKey}}"
+
+permissions:
+  network:
+    allow:
+      - "*.devinenterprise.com"
+      - "*.enterprise.windsurf.com"
+      - windsurf.com
+      # Login-time account verification probes the SaaS backend even on
+      # enterprise deployments (Connect permission_denied when blocked).
+      - server.codeium.com
+      - unleash.codeium.com
+      - cli.devin.ai
+      - static.devin.ai
+      - archive.ubuntu.com
+      - security.ubuntu.com
+      - ports.ubuntu.com
+      - download.docker.com
+
+setup:
+  startup:
+    - command: ["sh", "-c", "{ command -v apt-get && apt-get update -qq -y || true; } >/dev/null 2>&1 </dev/null &"]
+      user: "root"
+      description: Update apt package cache in background
+    # Pin the CLI to the enterprise deployment so `devin auth login`
+    # produces a <org>.devinenterprise.com sign-in URL. Written as root at
+    # every container start.
+    - command:
+        - sh
+        - -c
+        - |
+          mkdir -p /etc/devin
+          cat > /etc/devin/system.json <<'EOF'
+          {"enterprise_host": "${{ kit.args.org }}.devinenterprise.com"}
+          EOF
+      user: "root"
+      description: Pin Devin enterprise host via system.json
+    - command:
+        - sh
+        - -c
+        - |
+          set -e
+          [ -n "$MCP_GATEWAY_URL" ] || exit 0
+          mkdir -p "$HOME/.config/devin"
+          cat > "$HOME/.config/devin/mcp_config.json" <<EOF
+          {
+            "mcpServers": {
+              "mcp-gateway": {
+                "url": "$MCP_GATEWAY_URL",
+                "transport": "http",
+                "headers": {
+                  "Authorization": "Bearer $MCP_SENTINEL_TOKEN_NAME"
+                }
+              }
+            }
+          }
+          EOF
+      user: "agent"
+      description: Register the sandbox MCP gateway
+  files:
+    - path: /home/agent/.config/devin/config.json
+      content: '{"auto_update": false}'
+      onlyIfMissing: true
+      description: Disable Devin background updates
+
+agentInstructions:
+  filename: AGENTS.md
