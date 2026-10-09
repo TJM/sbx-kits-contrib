@@ -4,8 +4,20 @@
 
 ## Usage
 
-```bash
-sbx run ./devin-enterprise/ --kit-arg org=<your-org>
+```console
+sbx run --kit "docker.io/sbx/devin-enterprise-kit:latest" --kit-arg "devin-enterprise.org=<your-org>" devin-enterprise
+```
+
+Or from a git URL targeting this repo:
+
+```console
+sbx run --kit "git+https://github.com/docker/sbx-kits-contrib.git#dir=devin-enterprise" --kit-arg "devin-enterprise.org=<your-org>" devin-enterprise
+```
+
+Or with a local clone of this repo:
+
+```console
+sbx run --kit ./devin-enterprise/ --kit-arg "devin-enterprise.org=<your-org>" devin-enterprise
 ```
 
 `<your-org>` is the slug in your deployment's URL — `acme` for `acme.devinenterprise.com`. First run in each sandbox prints a `https://<org>.devinenterprise.com/auth/cli/continue?...` URL — open it, sign in, and paste the code back. Credentials persist across sandbox restarts; a recreated sandbox signs in again.
