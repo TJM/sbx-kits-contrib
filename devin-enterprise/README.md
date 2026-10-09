@@ -14,7 +14,7 @@ sbx run ./devin-enterprise/ --kit-arg org=<your-org>
 
 Unlike the `devin` kit, this kit does **not** use the proxy-managed credential (`credentials[]` + `oauth` block + the `devin-proxy-managed` sentinel). On enterprise deployments that model fails: the OAuth token endpoint at `api.devinenterprise.com/auth/cli/token` returns only the short-lived PKCE intermediate token, and the proxy's durable-key credential handoff never fires for non-SaaS `resourceHosts` — so after sign-in succeeds, the sentinel can never authenticate and the stock `devin` wrapper exits 1. See [docker/sbx-releases#683](https://github.com/docker/sbx-releases/issues/683).
 
-Instead, this kit passes the credential through: `devin-entry.sh` runs `devin-cli auth login --force-manual-token-flow` when `credentials.toml` is absent or blank, then `exec`s `devin-cli`. The real durable key stays in the container at `~/.local/share/devin/credentials.toml` and requests carry it verbatim.
+Instead, this kit passes the credential through: the enterprise `devin` wrapper keeps the base wrapper’s credential-state checks and login validation, but omits the proxy-sentinel rewrite. It clears an empty key before running `devin-cli auth login --force-manual-token-flow`, then `exec`s `devin-cli`. The real durable key stays in the container at `~/.local/share/devin/credentials.toml` and requests carry it verbatim.
 
 **Trade-off:** the durable key is readable by the agent inside the sandbox. The managed model exists precisely to avoid that; this kit should switch to it once the handoff works for enterprise hosts.
 
